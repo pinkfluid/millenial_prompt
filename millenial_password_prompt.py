@@ -3,9 +3,9 @@
 Password prompt that shows emojis derived from a hash of what you type,
 instead of stars or nothing.
 
-- Empty input  → blank placeholder
-- Any input    → SHA-256 XOR-folded into 10 bytes, each indexing one emoji
-                 (256 emojis × 10 positions = 80 bits of visual entropy)
+- Empty or short input → stars placeholder (at least 4 chars required)
+- Input (>= 4 chars)  → SHA-256 XOR-folded into 3 bytes, each indexing one emoji
+                        (8 emojis × 3 positions = 9 bits of visual entropy)
 """
 import sys
 import tty
@@ -15,57 +15,29 @@ import select
 import random
 import time
 
-# 256 hand-picked emojis that render reliably across terminals.
+# 8 hand-picked emojis for the hash palette.
 EMOJI_MAP = [
-    # 0-15   faces
-    '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗',
-    # 16-31  faces
-    '😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐',
-    # 32-47  faces
-    '😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑',
-    # 48-63  faces
-    '😲','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱',
-    # 64-79  faces / costumes
-    '🥵','🥶','😳','🤪','😵','🥴','🤧','🤒','🤕','🤠','😷','🥸','🤡','👻','💀','👽',
-    # 80-95  animals
-    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈',
-    # 96-111 animals
-    '🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛',
-    # 112-127 animals
-    '🦋','🐌','🐞','🐜','🦟','🦗','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞',
-    # 128-143 sea / big animals
-    '🦀','🐡','🐟','🐠','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🐘','🦛','🦏',
-    # 144-159 farm / misc animals
-    '🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩',
-    # 160-175 small animals / birds
-    '🐈','🐓','🦃','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦦','🦥','🐁','🐀',
-    # 176-191 fruit
-    '🍎','🍊','🍋','🍇','🍓','🍈','🍒','🍑','🥭','🍍','🥝','🍅','🫐','🍆','🥑','🥦',
-    # 192-207 vegetables / bread
-    '🥬','🥒','🌽','🥕','🧄','🧅','🥔','🍠','🥐','🥖','🍞','🥨','🧀','🥚','🍳','🧈',
-    # 208-223 meat / fast food
-    '🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🥪','🥙','🧆','🌮','🌯','🥗',
-    # 224-239 sports
-    '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🥊','🥋','🎽','🛹',
-    # 240-255 nature / music / misc
-    '🌈','🔥','💧','❄','🌊','⭐','🌟','💫','✨','🎵','🎶','🎸','🎹','🎺','🎻','🎮',
+    '🍄', '🌻', '🌲', '🌊', '🔮', '🎃', '👻', '🎱'
 ]
 
-assert len(EMOJI_MAP) == 256, f"Need 256 emojis, got {len(EMOJI_MAP)}"
+assert len(EMOJI_MAP) == 8, f"Need 8 emojis for palette, got {len(EMOJI_MAP)}"
 
-DISPLAY_LEN = 10  # 10 emoji slots; all 32 SHA-256 bytes are folded in via XOR
+DISPLAY_LEN = 3  # 3 emoji slots; all 32 SHA-256 bytes are folded in via XOR
 
 
 def password_to_emojis(password: str) -> str:
     """Return a fixed-length emoji string derived from the password hash."""
     if not password:
-        return '  ' * DISPLAY_LEN  # visible blank placeholder (2 spaces per emoji slot)
+        return '  ' * DISPLAY_LEN
+    if len(password) < 4:
+        # Show random emojis for the first 3 characters
+        return ''.join(random.choice(EMOJI_MAP) for _ in range(DISPLAY_LEN))
     digest = hashlib.sha256(password.encode('utf-8')).digest()
     # XOR-fold all 32 bytes into DISPLAY_LEN bytes so every bit contributes.
     folded = bytearray(DISPLAY_LEN)
     for i, b in enumerate(digest):
         folded[i % DISPLAY_LEN] ^= b
-    return ''.join(EMOJI_MAP[b] for b in folded)
+    return ''.join(EMOJI_MAP[b % len(EMOJI_MAP)] for b in folded)
 
 
 def get_password(prompt: str = 'Password: ') -> str:
